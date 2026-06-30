@@ -104,7 +104,7 @@ export function LazyVirtualList<T>({
   const loadMoreRef = useRef<HTMLDivElement>(null);
   
   // Intersection observer for infinite scrolling
-  const shouldLoadMore = useIntersectionObserver(loadMoreRef, {
+  const shouldLoadMore = useIntersectionObserver(loadMoreRef as React.RefObject<HTMLElement>, {
     threshold,
     rootMargin: '100px'
   });
