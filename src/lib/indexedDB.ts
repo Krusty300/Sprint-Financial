@@ -67,20 +67,19 @@ class IndexedDBManager {
   private async init(): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = window.indexedDB.open(this.dbName, this.version);
-      
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        this.createObjectStores();
-        resolve();
-      };
-      
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result as IDBDatabase;
-        this.createObjectStores(db);
-      };
-    });
-  }
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      this.db = request.result;
+      resolve();
+    };
+    
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result as IDBDatabase;
+      this.createObjectStores(db);
+    };
+  });
+}
 
   private createObjectStores(db?: IDBDatabase): void {
     const database = db || this.db;
