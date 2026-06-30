@@ -65,21 +65,22 @@ class IndexedDBManager {
   }
 
   private async init(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = window.indexedDB.open(this.dbName, this.version);
-    
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      this.db = request.result;
-      resolve();
-    };
-    
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result as IDBDatabase;
-      this.createObjectStores(db);
-    };
-  });
-}
+    return new Promise((resolve, reject) => {
+      const request = window.indexedDB.open(this.dbName, this.version);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve();
+      };
+      
+      request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+        const target = event.target as IDBOpenDBRequest;
+        const db = target.result as IDBDatabase;
+        this.createObjectStores(db);
+      };
+    });
+  }
 
   private createObjectStores(db?: IDBDatabase): void {
     const database = db || this.db;
@@ -110,10 +111,7 @@ class IndexedDBManager {
     }
 
     const jsonString = JSON.stringify(data);
-    
-    // Simple compression using run-length encoding
-    const compressed = this.runLengthEncode(jsonString);
-    return new Uint8Array(compressed.split('').map(char => char.charCodeAt(0)));
+    return new TextEncoder().encode(jsonString);
   }
 
   private async decompress(data: Uint8Array): Promise<any> {
@@ -121,55 +119,8 @@ class IndexedDBManager {
       return JSON.parse(new TextDecoder().decode(data));
     }
 
-    const compressed = Array.from(data);
-    const decompressed = this.runLengthDecode(compressed);
-    return JSON.parse(decompressed);
-  }
-
-  private runLengthEncode(input: string): string {
-    let result = '';
-    let i = 0;
-    
-    while (i < input.length) {
-      let count = 1;
-      while (i + count < input.length && input[i + count] === input[i]) {
-        count++;
-      }
-      
-      if (count > 3) {
-        result += count + input[i];
-        i += count;
-      } else {
-        result += input[i];
-        i++;
-      }
-    }
-    
-    return result;
-  }
-
-  private runLengthDecode(input: string): string {
-    let result = '';
-    let i = 0;
-    
-    while (i < input.length) {
-      if (input[i] >= '0' && input[i] <= '9') {
-        let count = parseInt(input[i]);
-        i++;
-        
-        if (i < input.length && input[i] >= '0' && input[i] <= '9') {
-          count = count * 10 + parseInt(input[i]);
-          i++;
-        }
-        
-        result += String.fromCharCode(count);
-      } else {
-        result += input[i];
-        i++;
-      }
-    }
-    
-    return result;
+    const jsonString = new TextDecoder().decode(data);
+    return JSON.parse(jsonString);
   }
 
   // Generic CRUD operations
@@ -184,25 +135,7 @@ class IndexedDBManager {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         const items = request.result;
-        
-        // Decompress if needed
-        if (this.compressionEnabled && items.length > 0) {
-          Promise.all(items.map(async (item: any) => {
-            if (item.compressed) {
-              try {
-                item.data = await this.decompress(item.data);
-                delete item.compressed;
-              } catch (error) {
-                console.error('Failed to decompress item:', error);
-              }
-            }
-            return item;
-          })).then(decompressedItems => {
-            resolve(decompressedItems);
-          });
-        } else {
-          resolve(items);
-        }
+        resolve(items);
       };
     });
   }
@@ -222,26 +155,10 @@ class IndexedDBManager {
         updatedAt: new Date().toISOString()
       };
       
-      // Compress if enabled and item is large
-      if (this.compressionEnabled && JSON.stringify(itemWithMeta).length > 1000) {
-        this.compress(itemWithMeta).then(compressed => {
-          const compressedItem = {
-            ...itemWithMeta,
-            data: compressed,
-            compressed: true
-          };
-          
-          const request = store.add(compressedItem);
-          
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => resolve(request.result);
-        }).catch(reject);
-      } else {
-        const request = store.add(itemWithMeta);
-        
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      }
+      const request = store.add(itemWithMeta);
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result as string);
     });
   }
 
@@ -319,33 +236,18 @@ class IndexedDBManager {
       let count = 0;
       
       request.onerror = () => reject(request.error);
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
+      request.onsuccess = (event: Event) => {
+        const cursor = (event.target as IDBRequest).result as IDBCursorWithValue;
         
         if (cursor) {
           const item = cursor.value;
+          results.push(item);
+          count++;
           
-          // Decompress if needed
-          if (item.compressed) {
-            this.decompress(item.data).then(decompressed => {
-              results.push({ ...item, data: decompressed });
-              count++;
-              
-              if (!query.limit || count < query.limit) {
-                cursor.continue();
-              } else {
-                resolve(results);
-              }
-            });
+          if (!query.limit || count < query.limit) {
+            cursor.continue();
           } else {
-            results.push(item);
-            count++;
-            
-            if (!query.limit || count < query.limit) {
-              cursor.continue();
-            } else {
-              resolve(results);
-            }
+            resolve(results);
           }
         } else {
           resolve(results);
@@ -395,33 +297,39 @@ class IndexedDBManager {
 
   // Backup and restore operations
   async createBackup(): Promise<Blob> {
-    const transactions = await this.getAll<Transaction>('transactions');
-    const categories = await this.getAll<Category>('categories');
-    const budgets = await this.getAll<Budget>('budgets');
-    const accounts = await this.getAll<Account>('accounts');
-    
-    const backup = {
-      version: this.version,
-      timestamp: new Date().toISOString(),
-      data: {
-        transactions,
-        categories,
-        budgets,
-        accounts
-      }
-    };
-    
-    const compressedBackup = await this.compress(backup);
-    return new Blob([compressedBackup], { type: 'application/octet-stream' });
-  }
+  const transactions = await this.getAll<Transaction>('transactions');
+  const categories = await this.getAll<Category>('categories');
+  const budgets = await this.getAll<Budget>('budgets');
+  const accounts = await this.getAll<Account>('accounts');
+  
+  const backup = {
+    version: this.version,
+    timestamp: new Date().toISOString(),
+    data: {
+      transactions,
+      categories,
+      budgets,
+      accounts
+    }
+  };
+  
+  const compressedBackup = await this.compress(backup);
+  return new Blob([compressedBackup], { type: 'application/octet-stream' });
+}
 
   async restoreFromBackup(file: File): Promise<void> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       
-      reader.onload = async (event) => {
+      reader.onload = async (event: ProgressEvent<FileReader>) => {
         try {
-          const data = await this.decompress(new Uint8Array(event.target!.result as ArrayBuffer));
+          const target = event.target;
+          if (!target || !target.result) {
+            reject(new Error('Failed to read file'));
+            return;
+          }
+          
+          const data = await this.decompress(new Uint8Array(target.result as ArrayBuffer));
           
           // Clear existing data
           await this.clearAll();
@@ -467,6 +375,19 @@ class IndexedDBManager {
         await this.add('transactions', transaction);
       }
     }
+  }
+
+  private async clear(storeName: string): Promise<void> {
+    if (!this.db) await this.init();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([storeName], 'readwrite');
+      const store = transaction.objectStore(storeName);
+      const request = store.clear();
+      
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
   }
 
   async clearAll(): Promise<void> {
