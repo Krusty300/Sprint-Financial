@@ -313,8 +313,9 @@ class IndexedDBManager {
     }
   };
   
-  const compressedBackup = await this.compress(backup);
-  return new Blob([compressedBackup], { type: 'application/octet-stream' });
+  const jsonString = JSON.stringify(backup, null, 2);
+  // Use a simple Blob with JSON data
+  return new Blob([jsonString], { type: 'application/json' });
 }
 
   async restoreFromBackup(file: File): Promise<void> {
