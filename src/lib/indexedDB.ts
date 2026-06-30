@@ -113,7 +113,7 @@ class IndexedDBManager {
     
     // Simple compression using run-length encoding
     const compressed = this.runLengthEncode(jsonString);
-    return new Uint8Array(compressed);
+    return new Uint8Array(compressed.split('').map(char => char.charCodeAt(0)));
   }
 
   private async decompress(data: Uint8Array): Promise<any> {
