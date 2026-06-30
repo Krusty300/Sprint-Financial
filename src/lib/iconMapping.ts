@@ -1,0 +1,63 @@
+import { 
+  Home, 
+  TrendingUp, 
+  CreditCard, 
+  Target, 
+  PieChart, 
+  Wallet, 
+  Layout, 
+  Settings,
+  Trash2,
+  Plus,
+  Menu,
+  X,
+  Moon,
+  Sun,
+  Calculator,
+  Calendar,
+  Filter,
+  FileDown,
+  PiggyBank,
+  Receipt,
+  LayoutDashboard,
+  Smartphone,
+  DollarSign,
+  ArrowUpDown,
+  AlertCircle,
+  Bell,
+} from 'lucide-react';
+
+// Icon mapping for navigation items
+export const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  Home,
+  TrendingUp,
+  CreditCard,
+  Target,
+  PieChart,
+  Wallet,
+  Layout,
+  Settings,
+  Trash2,
+  Plus,
+  Menu,
+  X,
+  Moon,
+  Sun,
+  Calculator,
+  Calendar,
+  Filter,
+  FileDown,
+  PiggyBank,
+  Receipt,
+  LayoutDashboard,
+  Smartphone,
+  DollarSign,
+  ArrowUpDown,
+  AlertCircle,
+  Bell,
+};
+
+// Helper function to get icon component by name
+export function getIcon(iconName: string): React.ComponentType<{ className?: string }> {
+  return iconMap[iconName] || Layout; // Default fallback
+}
